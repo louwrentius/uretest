@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+#
+# Louwrentius 2014
+#
+# License: BSD License
+#
+# This script is intended to generate Unreoverable Read Errors.
+# Only use it on disks you are willing to sacrifice.
+# 
+# This disks just reads data in an endless loop by checking the
+# MD5 signature of the contents of the device. 
+#
+# All output is logged, including how much data has been transfered.
+#
+# Example:
+#
+# uretest /log sdc
+#
+# Test results are in /log/sdc.log
+#
+# Version 1.0
+
+LOGDIR="$1"
+DEV="$2"
+MD5FILE="$LOGDIR"/"$DEV.md5"
+LOGFILE="$LOGDIR"/"$DEV.log"
+
+command -v md5sum >> /dev/null 2>&1
+if [ ! $? ]
+then
+    echo "Error executing md5sum, is it installed?"
+    exit 1
+fi
+
+command -v bc >> /dev/null 2>&1
+if [ ! $? ]
+then
+    echo "Tool 'bc' is not installed or error."
+    exit 1
+fi
+
+if [ ! -e "/dev/$DEV" ]
+then
+    echo "Device $DEV does not exist."
+    exit 1
+fi
+
+if [ ! -e "$LOGDIR" ]
+then
+   echo  "Directory $LOGDIR does not exist."
+   exit 1
+fi
+
+echo "Generating MD5 checksum..."
+
+md5sum /dev/$DEV > $MD5FILE
+
+echo "Starting MD5 check in an endless loop..."
+
+DISKBYTES=$(fdisk -l /dev/$DEV 2>/dev/null | grep Disk | grep bytes | cut -d "," -f 2 | awk '{ print $1 }')
+DISKTERA=$( echo "scale=2; $DISKBYTES / 1024 / 1024 / 1024 / 1024" | bc )
+DISKTRANSFER=0
+
+while true
+do
+    MD5OUT=$(md5sum -c $MD5FILE 2>&1)
+    DATE=$(date +%Y%m%d-%H%M)
+    SYSLOG=$(grep "I/O error" /var/log/syslog | grep $DEV)
+    echo "$DATE,$MD5OUT,$SYSLOG,$DISKTRANSFER" >> $LOGFILE
+    DISKTRANSFER=$( echo "scale=2; $DISKTRANSFER + $DISKTERA" | bc )
+done
+    
+
